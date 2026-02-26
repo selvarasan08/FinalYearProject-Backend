@@ -1,0 +1,197 @@
+# ============================================================
+#  BusTrack API — test.http
+#  Use with VS Code REST Client extension  (Ctrl+Shift+P →
+#  "REST Client: Send Request")  or JetBrains HTTP Client.
+#
+#  WORKFLOW:
+#  1. Run /setup once to create the first admin
+#  2. Copy the token from the response into @adminToken
+#  3. Use /create-admin to add more admins
+# ============================================================
+
+@baseUrl = http://localhost:5000/api
+
+# Paste your admin JWT here after running /setup or /login
+@adminToken =eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjY5OWVmYmQ1MmUxZDRkZTNmNmM4MDg1MCIsInJvbGUiOiJhZG1pbiIsImlhdCI6MTc3MjAyNjgzOCwiZXhwIjoxNzcyNjMxNjM4fQ.ZCBmVU8946VW8mroPM6O60cE5HdjWL4rMpgJ3GZsnD4
+
+
+### ============================================================
+###  STEP 1 — SETUP (run ONCE on a fresh database)
+###  Creates the very first admin. Blocked after first use.
+### ============================================================
+
+POST {{baseUrl}}/auth/setup
+Content-Type: application/json
+
+{
+  "name": "Selvarasan Admin",
+  "phone": "9361247573",
+  "password": "757308"
+}
+
+
+### ============================================================
+###  STEP 2 — LOGIN as admin (get a fresh token any time)
+### ============================================================
+
+POST {{baseUrl}}/auth/login
+Content-Type: application/json
+
+{
+  "phone": "9000000000",
+  "password": "admin123"
+}
+
+
+### ============================================================
+###  STEP 3 — CREATE more admins (requires admin token)
+###  Replace @adminToken above with the token from Step 1 or 2
+### ============================================================
+
+POST {{baseUrl}}/auth/create-admin
+Content-Type: application/json
+Authorization: Bearer {{adminToken}}
+
+{
+  "name": "Lenin",
+  "phone": "0000000001",
+  "password": "000000"
+}
+
+###
+
+POST {{baseUrl}}/auth/create-admin
+Content-Type: application/json
+Authorization: Bearer {{adminToken}}
+
+{
+  "name": "Admin Three",
+  "phone": "9222222222",
+  "password": "admin789"
+}
+
+
+### ============================================================
+###  LIST ALL ADMINS
+### ============================================================
+
+GET {{baseUrl}}/auth/admins
+Authorization: Bearer {{adminToken}}
+
+
+### ============================================================
+###  DELETE AN ADMIN  (replace the ID below)
+### ============================================================
+
+DELETE {{baseUrl}}/auth/admins/PASTE_ADMIN_ID_HERE
+Authorization: Bearer {{adminToken}}
+
+
+### ============================================================
+###  DRIVER REGISTRATION (no token needed)
+### ============================================================
+
+POST {{baseUrl}}/auth/register
+Content-Type: application/json
+
+{
+  "name": "Rajan Kumar",
+  "phone": "9876543210",
+  "password": "driver123"
+}
+
+
+### ============================================================
+###  DRIVER LOGIN
+### ============================================================
+
+POST {{baseUrl}}/auth/login
+Content-Type: application/json
+
+{
+  "phone": "9876543210",
+  "password": "driver123"
+}
+
+
+### ============================================================
+###  GET ALL ACTIVE BUSES (public)
+### ============================================================
+
+GET {{baseUrl}}/buses
+
+
+### ============================================================
+###  GET BUSES ARRIVING AT A STOP (public — what QR scan calls)
+###  Replace STOP_ID with a real stop _id from your DB
+### ============================================================
+
+GET {{baseUrl}}/buses/stop/PASTE_STOP_ID_HERE
+
+
+### ============================================================
+###  GET ALL STOPS (public)
+### ============================================================
+
+GET {{baseUrl}}/stops
+
+
+### ============================================================
+###  CREATE A STOP (admin token required)
+### ============================================================
+
+POST {{baseUrl}}/stops
+Content-Type: application/json
+Authorization: Bearer {{adminToken}}
+
+{
+  "name": "Central Station",
+  "stopCode": "STOP_001",
+  "latitude": 13.0827,
+  "longitude": 80.2707,
+  "address": "Chennai Central, Chennai"
+}
+
+
+### ============================================================
+###  GET ALL ROUTES (public)
+### ============================================================
+
+GET {{baseUrl}}/routes
+
+
+### ============================================================
+###  CREATE A ROUTE (admin token required)
+###  stops array: each entry needs stop _id and order index
+### ============================================================
+
+POST {{baseUrl}}/routes
+Content-Type: application/json
+Authorization: Bearer {{adminToken}}
+
+{
+  "name": "Central to Tambaram",
+  "routeNumber": "19C",
+  "description": "Express route",
+  "stops": [
+    { "stop": "PASTE_STOP_ID_1", "order": 0, "distanceFromPrev": 0 },
+    { "stop": "PASTE_STOP_ID_2", "order": 1, "distanceFromPrev": 5 },
+    { "stop": "PASTE_STOP_ID_3", "order": 2, "distanceFromPrev": 4 }
+  ]
+}
+
+
+### ============================================================
+###  CREATE A BUS (admin token required)
+### ============================================================
+
+POST {{baseUrl}}/buses
+Content-Type: application/json
+Authorization: Bearer {{adminToken}}
+
+{
+  "busNumber": "TN-01-AB-1234",
+  "busName": "Express 19C-A",
+  "route": "PASTE_ROUTE_ID_HERE",
+  "capacity": 50
+}
