@@ -61,8 +61,17 @@ router.get('/', async (req, res) => {
   }
 });
 
-// GET /api/buses/stop/:stopId - Get buses coming to a specific stop with ETA
-// This is the endpoint called when passenger scans QR code
+// GET /api/buses/stop/:stopId
+// Optional query: ?passengerLat=13.08&passengerLng=80.27
+//
+// PASSENGER MODE (when lat/lng provided):
+//   - Bus ETA calculated bus → passenger position
+//   - Walking distance + time calculated passenger → stop (5 km/h walk)
+//   - totalJourneyMinutes = bus ETA + walk time (full door-to-bus time)
+//   - Passenger dot shown on map, dashed walk line drawn to stop
+//
+// STOP MODE (no passenger coords):
+//   - Bus ETA calculated bus → stop  (original behaviour)
 router.get('/stop/:stopId', async (req, res) => {
   try {
     const stop = await Stop.findById(req.params.stopId).populate('routes');
@@ -71,7 +80,23 @@ router.get('/stop/:stopId', async (req, res) => {
     const stopLat = stop.location.coordinates[1];
     const stopLon = stop.location.coordinates[0];
 
-    // Find all active buses whose route includes this stop
+    // --- Optional passenger location ---
+    const pLat = req.query.passengerLat ? parseFloat(req.query.passengerLat) : null;
+    const pLng = req.query.passengerLng ? parseFloat(req.query.passengerLng) : null;
+    const hasPassenger = pLat !== null && pLng !== null && !isNaN(pLat) && !isNaN(pLng);
+
+    // Walking: passenger → stop at 5 km/h
+    let walkingDistanceKm = 0;
+    let walkingMinutes    = 0;
+    if (hasPassenger) {
+      walkingDistanceKm = Math.round(haversineDistance(pLat, pLng, stopLat, stopLon) * 100) / 100;
+      walkingMinutes    = Math.ceil((walkingDistanceKm / 5) * 60);
+    }
+
+    // Bus ETA target: passenger position if available, else the stop itself
+    const etaTargetLat = hasPassenger ? pLat : stopLat;
+    const etaTargetLon = hasPassenger ? pLng : stopLon;
+
     const routeIds = stop.routes.map(r => r._id);
     const buses = await Bus.find({
       isActive: true,
@@ -81,28 +106,30 @@ router.get('/stop/:stopId', async (req, res) => {
       populate: { path: 'stops.stop' }
     }).populate('driver', 'name');
 
-    // For each bus, check if the stop is AHEAD of the bus (not already passed)
-    // and calculate ETA
     const busesWithETA = [];
 
     for (const bus of buses) {
       const route = bus.route;
       if (!route || !route.stops) continue;
 
-      // Find this stop's order in the route
       const targetStopInRoute = route.stops.find(
         s => s.stop && s.stop._id.toString() === req.params.stopId
       );
       if (!targetStopInRoute) continue;
-
-      // Only show bus if the target stop is ahead of the bus's current progress
       if (targetStopInRoute.order < bus.nextStopIndex) continue;
 
       const busLat = bus.currentLocation.coordinates[1];
       const busLon = bus.currentLocation.coordinates[0];
-      const { distanceKm, etaMinutes } = calculateETA(busLat, busLon, stopLat, stopLon, bus.speed);
 
-      // Build ordered route polyline with all stop coordinates
+      // Primary ETA: bus → passenger (or stop)
+      const { distanceKm, etaMinutes } = calculateETA(busLat, busLon, etaTargetLat, etaTargetLon, bus.speed);
+
+      // Always also calculate bus → stop distance for display
+      const distanceToStop = Math.round(haversineDistance(busLat, busLon, stopLat, stopLon) * 100) / 100;
+
+      // Full journey time a passenger experiences: wait for bus + walk to stop
+      const totalJourneyMinutes = hasPassenger ? etaMinutes + walkingMinutes : etaMinutes;
+
       const routePolyline = route.stops
         .filter(s => s.stop && s.stop.location)
         .sort((a, b) => a.order - b.order)
@@ -125,15 +152,16 @@ router.get('/stop/:stopId', async (req, res) => {
         driver: bus.driver?.name || 'Unknown',
         currentLocation: bus.currentLocation,
         speed: bus.speed,
-        distanceKm,
-        etaMinutes,
+        distanceKm,           // bus → passenger (or stop if no passenger)
+        distanceToStop,        // bus → stop (always)
+        etaMinutes,            // bus ETA to passenger / stop
+        totalJourneyMinutes,   // full passenger journey time
         lastUpdated: bus.lastUpdated,
         stopsAway: targetStopInRoute.order - bus.nextStopIndex,
-        routePolyline, // ordered stop coordinates for map
+        routePolyline,
       });
     }
 
-    // Sort by ETA
     busesWithETA.sort((a, b) => a.etaMinutes - b.etaMinutes);
 
     res.json({
@@ -141,9 +169,14 @@ router.get('/stop/:stopId', async (req, res) => {
         _id: stop._id,
         name: stop.name,
         stopCode: stop.stopCode,
-        address: stop.address
+        address: stop.address,
+        lat: stopLat,
+        lng: stopLon,
       },
-      buses: busesWithETA
+      passenger: hasPassenger
+        ? { lat: pLat, lng: pLng, walkingDistanceKm, walkingMinutes }
+        : null,
+      buses: busesWithETA,
     });
   } catch (err) {
     res.status(500).json({ message: err.message });
