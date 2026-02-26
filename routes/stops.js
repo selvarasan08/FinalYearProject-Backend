@@ -54,7 +54,7 @@ router.post('/', authMiddleware, async (req, res) => {
     await stop.save();
 
     // QR points to the PASSENGER frontend (separate app on port 3001)
-    const passengerUrl = process.env.PASSENGER_FRONTEND_URL || 'http://localhost:3001';
+    const passengerUrl = 'https://salemoneview.netlify.app';
     const qrUrl = `${passengerUrl}/stop/${stop._id}`;
     const qrBase64 = await QRCode.toDataURL(qrUrl, {
       width: 400,
